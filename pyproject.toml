@@ -1,0 +1,17 @@
+[project]
+name = "orca-agent-advisory"
+version = "0.1.0"
+description = "Multi-agent investment advisory layer schema contract."
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.8,<3",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3,<9",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

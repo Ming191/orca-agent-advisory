@@ -59,7 +59,7 @@ def test_hierarchical_crew_uses_custom_manager_and_specialist_tools(monkeypatch)
     bundle = ToolResultBundle.model_validate(load_sample("normal_tool_results.json"))
     runner = HierarchicalCrewRunner(
         settings=AgentSettings(),
-        llm_factory=lambda settings: object(),
+        llm_factory=lambda settings: "openai/gpt-4o-mini",
     )
 
     decision = runner.run(request, bundle)
@@ -78,6 +78,8 @@ def test_hierarchical_crew_uses_custom_manager_and_specialist_tools(monkeypatch)
     ]
     assert [len(agent.tools) for agent in artifacts.specialist_agents] == [2, 1, 1, 2]
     assert len(artifacts.tasks) == 5
+    assert all(getattr(task, "output_pydantic", None) is not None for task in artifacts.tasks[:4])
+    assert artifacts.tasks[-1].kwargs["context"] == artifacts.tasks[:4]
     assert artifacts.crew.inputs is not None
     assert artifacts.crew.inputs["request"]["request_id"] == request.request_id
 

@@ -4,8 +4,9 @@ version = "0.1.0"
 description = "Multi-agent investment advisory layer schema contract."
 requires-python = ">=3.11"
 dependencies = [
-    "crewai>=0.165,<1",
+    "crewai>=1.14.4,<2",
     "pydantic>=2.8,<3",
+    "pyyaml>=6.0,<7",
 ]
 
 [dependency-groups]

@@ -14,7 +14,12 @@ from app.schemas.enums import PortfolioAction, Recommendation, ReviewReason, Ris
 from app.schemas.manager_outputs import ManagerSynthesisOutput
 from app.schemas.request import AdvisoryDecisionRequest
 from app.schemas.tool_results import ToolResultBundle, ToolResultValidationError
-from app.services.decision_service import AdvisoryDecisionService, DecisionValidationError
+from app.services.crew_runner import CrewOrchestratedOutputs
+from app.services.decision_service import (
+    AdvisoryDecisionService,
+    DecisionValidationError,
+    run_specialist_analysis,
+)
 
 
 SAMPLES_DIR = Path(__file__).resolve().parents[1] / "samples"
@@ -112,26 +117,29 @@ def test_missing_required_market_tool_result_fails_before_agents() -> None:
 
 def test_single_symbol_manager_synthesis_requires_recommendation(tmp_path: Path) -> None:
     class PortfolioDraftRunner:
-        def run_manager_synthesis(
+        def run_orchestrated(
             self,
             request: AdvisoryDecisionRequest,
             tool_results: ToolResultBundle,
-        ) -> ManagerSynthesisOutput:
-            return ManagerSynthesisOutput(
-                summary="Portfolio-style draft was returned for a single-symbol request.",
-                time_horizon=request.user_context.investment_horizon,
-                portfolio_allocation=[
-                    PortfolioAllocation(
-                        symbol=request.symbols[0],
-                        weight_pct=100.0,
-                        portfolio_action=PortfolioAction.MAINTAIN_WEIGHT,
-                        rationale="Invalid draft mode for this request.",
-                    )
-                ],
-                portfolio_summary=PortfolioSummary(
-                    expected_risk_label=RiskLabel.MEDIUM,
-                    concentration_risk=RiskLabel.MEDIUM,
-                    dominant_themes=[],
+        ) -> CrewOrchestratedOutputs:
+            return CrewOrchestratedOutputs(
+                agent_outputs=run_specialist_analysis(request, tool_results),
+                manager_payload=ManagerSynthesisOutput(
+                    summary="Portfolio-style draft was returned for a single-symbol request.",
+                    time_horizon=request.user_context.investment_horizon,
+                    portfolio_allocation=[
+                        PortfolioAllocation(
+                            symbol=request.symbols[0],
+                            weight_pct=100.0,
+                            portfolio_action=PortfolioAction.MAINTAIN_WEIGHT,
+                            rationale="Invalid draft mode for this request.",
+                        )
+                    ],
+                    portfolio_summary=PortfolioSummary(
+                        expected_risk_label=RiskLabel.MEDIUM,
+                        concentration_risk=RiskLabel.MEDIUM,
+                        dominant_themes=[],
+                    ),
                 ),
             )
 

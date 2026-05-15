@@ -23,29 +23,63 @@ class FakeProcess:
 
 
 class FakeAgent:
-    def __init__(self, **kwargs: Any) -> None:
-        self.kwargs = kwargs
-        self.role = kwargs.get("role")
-        self.tools = kwargs.get("tools", [])
-        self.allow_delegation = kwargs.get("allow_delegation", False)
+    def __init__(
+        self,
+        *,
+        config: dict[str, Any] | None = None,
+        llm: Any,
+        tools: list[Any] | None = None,
+        verbose: bool = False,
+        allow_delegation: bool = False,
+        max_iter: int | None = None,
+        max_execution_time: int | None = None,
+    ) -> None:
+        self.config = config or {}
+        self.llm = llm
+        self.role = self.config.get("role")
+        self.tools = tools or []
+        self.verbose = verbose
+        self.allow_delegation = allow_delegation
+        self.max_iter = max_iter
+        self.max_execution_time = max_execution_time
 
 
 class FakeTask:
-    def __init__(self, **kwargs: Any) -> None:
-        self.kwargs = kwargs
-        self.agent = kwargs.get("agent")
-        self.output_pydantic = kwargs.get("output_pydantic")
-        config = kwargs.get("config", {})
-        self.expected_output = kwargs.get("expected_output") or config.get("expected_output")
+    def __init__(
+        self,
+        *,
+        config: dict[str, Any],
+        agent: Any | None = None,
+        context: list[Any] | None = None,
+        output_pydantic: Any | None = None,
+        expected_output: str | None = None,
+    ) -> None:
+        self.config = config
+        self.agent = agent
+        self.context = context or []
+        self.output_pydantic = output_pydantic
+        self.expected_output = expected_output or config.get("expected_output")
 
 
 class FakeCrew:
-    def __init__(self, **kwargs: Any) -> None:
-        self.kwargs = kwargs
-        self.agents = kwargs["agents"]
-        self.tasks = kwargs["tasks"]
-        self.manager_agent = kwargs["manager_agent"]
-        self.process = kwargs["process"]
+    def __init__(
+        self,
+        *,
+        agents: list[Any],
+        tasks: list[Any],
+        manager_agent: Any,
+        process: Any,
+        verbose: bool = False,
+        tracing: bool = True,
+        share_crew: bool = False,
+    ) -> None:
+        self.agents = agents
+        self.tasks = tasks
+        self.manager_agent = manager_agent
+        self.process = process
+        self.verbose = verbose
+        self.tracing = tracing
+        self.share_crew = share_crew
         self.inputs: dict[str, Any] | None = None
 
     def kickoff(self, inputs: dict[str, Any]) -> str:
@@ -74,8 +108,8 @@ def test_hierarchical_crew_uses_custom_manager_and_specialist_tools(monkeypatch)
     assert artifacts.manager_agent not in artifacts.specialist_agents
     assert artifacts.manager_agent.allow_delegation is True
     assert artifacts.manager_agent.role == "Investment Advisory Manager"
-    assert artifacts.crew.kwargs["tracing"] is True
-    assert artifacts.crew.kwargs["share_crew"] is False
+    assert artifacts.crew.tracing is True
+    assert artifacts.crew.share_crew is False
     assert [agent.role for agent in artifacts.specialist_agents] == [
         "Market Data Analyst",
         "Financial Sentiment Analyst",

@@ -35,11 +35,12 @@ from app.schemas.tool_results import ToolResultBundle
 from app.services.audit_service import create_audit_metadata, create_retrieved_tool_audit
 from app.services.confidence_service import ConfidenceInputs, aggregate_confidence
 from app.services.conflict_resolution_service import resolve_conflicts
-from app.services.crew_runner import HierarchicalCrewRunner
+from app.services.crew_runner import CrewOrchestratedOutputs, HierarchicalCrewRunner
 from app.services.human_review_service import evaluate_human_review
 from app.services.output_store import DecisionOutputStore
 from app.services.source_quality_service import SourceQualityAssessment, assess_source_quality
 from app.validators.financial_validator import validate_financial_output
+from app.validators.manager_synthesis_parser import parse_manager_synthesis_output
 
 
 DecisionResult = SingleSymbolDecision | PortfolioDecision
@@ -61,9 +62,8 @@ class AdvisoryDecisionService:
         tool_results: ToolResultBundle,
     ) -> DecisionResult:
         tool_results.validate_required_for(request)
-        agent_outputs = run_specialist_analysis(request, tool_results)
+        agent_outputs, synthesis = self._orchestrate(request, tool_results)
         source_quality_assessment = assess_source_quality(request, tool_results)
-        synthesis = self._manager_synthesis(request, tool_results, agent_outputs)
 
         if request.decision_mode == DecisionMode.PORTFOLIO_RECOMMENDATION:
             decision = self._assemble_portfolio_decision(
@@ -86,16 +86,27 @@ class AdvisoryDecisionService:
         self._save_output(request, tool_results, synthesis, decision)
         return decision
 
-    def _manager_synthesis(
+    def _orchestrate(
         self,
         request: AdvisoryDecisionRequest,
         tool_results: ToolResultBundle,
-        agent_outputs: AgentOutputBundle,
-    ) -> ManagerSynthesisOutput:
+    ) -> tuple[AgentOutputBundle, ManagerSynthesisOutput]:
         if self.settings.advisory_use_crewai_manager:
-            runner = self.crew_runner or HierarchicalCrewRunner(settings=self.settings)
-            return runner.run_manager_synthesis(request, tool_results)
-        return build_deterministic_manager_synthesis(request, tool_results, agent_outputs)
+            runner = self.crew_runner or HierarchicalCrewRunner(
+                settings=self.settings,
+                verbose=self.settings.crewai_verbose,
+            )
+            crew_outputs = runner.run_orchestrated(request, tool_results)
+            synthesis = _parse_manager_payload(
+                crew_outputs,
+                request=request,
+                tool_results=tool_results,
+            )
+            return crew_outputs.agent_outputs, synthesis
+
+        agent_outputs = run_specialist_analysis(request, tool_results)
+        synthesis = build_deterministic_manager_synthesis(request, tool_results, agent_outputs)
+        return agent_outputs, synthesis
 
     def _save_output(
         self,
@@ -271,6 +282,38 @@ def build_deterministic_manager_synthesis(
     if request.decision_mode == DecisionMode.PORTFOLIO_RECOMMENDATION:
         return _portfolio_synthesis(request, tool_results, agent_outputs)
     return _single_symbol_synthesis(request, tool_results, agent_outputs)
+
+
+def _parse_manager_payload(
+    crew_outputs: CrewOrchestratedOutputs,
+    *,
+    request: AdvisoryDecisionRequest,
+    tool_results: ToolResultBundle,
+) -> ManagerSynthesisOutput:
+    payload = crew_outputs.manager_payload
+    if payload is None:
+        return build_deterministic_manager_synthesis(
+            request,
+            tool_results,
+            crew_outputs.agent_outputs,
+        )
+
+    pydantic_output = getattr(payload, "pydantic", None)
+    if isinstance(pydantic_output, ManagerSynthesisOutput):
+        return pydantic_output
+    if isinstance(payload, ManagerSynthesisOutput):
+        return payload
+
+    try:
+        if isinstance(payload, dict):
+            return ManagerSynthesisOutput.model_validate(payload)
+        return parse_manager_synthesis_output(payload, request)
+    except Exception:
+        return build_deterministic_manager_synthesis(
+            request,
+            tool_results,
+            crew_outputs.agent_outputs,
+        )
 
 
 def _single_symbol_synthesis(

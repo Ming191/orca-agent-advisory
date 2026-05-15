@@ -2,10 +2,21 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from app.agents.data_agent import analyze_market_data
+from app.agents.risk_agent import analyze_risk
+from app.agents.sentiment_agent import analyze_sentiment
+from app.agents.valuation_agent import analyze_valuation
 from app.agents.manager_agent import create_manager_agent
 from app.config import AgentSettings, load_settings
 from app.crews.advisory_crew import AdvisorySpecialistCrew
 from app.llm.llm_factory import create_deepseek_llm
+from app.schemas.agent_outputs import (
+    AgentOutputBundle,
+    MarketDataAgentOutput,
+    RiskAgentOutput,
+    SentimentAgentOutput,
+    ValuationAgentOutput,
+)
 from app.schemas.decision import SingleSymbolDecision
 from app.schemas.manager_outputs import ManagerSynthesisOutput
 from app.schemas.request import AdvisoryDecisionRequest
@@ -29,6 +40,12 @@ class CrewRunArtifacts:
     specialist_agents: list[Any]
     tasks: list[Any]
     crew: Any
+
+
+@dataclass
+class CrewOrchestratedOutputs:
+    agent_outputs: AgentOutputBundle
+    manager_payload: Any | None
 
 
 @dataclass
@@ -73,6 +90,29 @@ class HierarchicalCrewRunner:
         if isinstance(pydantic_output, ManagerSynthesisOutput):
             return pydantic_output
         return parse_manager_synthesis_output(raw_result, request)
+
+    def run_orchestrated(
+        self,
+        request: AdvisoryDecisionRequest,
+        tool_results: ToolResultBundle,
+    ) -> CrewOrchestratedOutputs:
+        artifacts = self.build_crew(request, tool_results)
+        raw_result = artifacts.crew.kickoff(
+            inputs={
+                "request": request.model_dump(mode="json"),
+                "request_json": request.model_dump_json(),
+                "symbols": ", ".join(request.symbols),
+                "decision_mode": request.decision_mode.value,
+            }
+        )
+
+        manager_task = artifacts.tasks[-1] if artifacts.tasks else None
+        manager_payload = _extract_task_payload(manager_task) or raw_result
+        agent_outputs = _parse_specialist_outputs(artifacts.tasks, request, tool_results)
+        return CrewOrchestratedOutputs(
+            agent_outputs=agent_outputs,
+            manager_payload=manager_payload,
+        )
 
     def build_crew(
         self,
@@ -192,3 +232,76 @@ def _build_manager_task(
 def _require_crewai() -> None:
     if Crew is None or Process is None:
         raise RuntimeError("CrewAI is required for the hierarchical crew runner")
+
+
+def _extract_task_payload(task: Any | None) -> Any | None:
+    if task is None:
+        return None
+
+    for attr in ("output", "result", "raw_output", "raw", "response"):
+        value = getattr(task, attr, None)
+        if value is not None:
+            return value
+    return None
+
+
+def _parse_specialist_outputs(
+    tasks: list[Any],
+    request: AdvisoryDecisionRequest,
+    tool_results: ToolResultBundle,
+) -> AgentOutputBundle:
+    market_task = tasks[0] if len(tasks) > 0 else None
+    sentiment_task = tasks[1] if len(tasks) > 1 else None
+    valuation_task = tasks[2] if len(tasks) > 2 else None
+    risk_task = tasks[3] if len(tasks) > 3 else None
+
+    market_output = _parse_specialist_payload(
+        _extract_task_payload(market_task),
+        MarketDataAgentOutput,
+        fallback=lambda: analyze_market_data(request, tool_results),
+    )
+    sentiment_output = _parse_specialist_payload(
+        _extract_task_payload(sentiment_task),
+        SentimentAgentOutput,
+        fallback=lambda: analyze_sentiment(request, tool_results),
+    )
+    valuation_output = _parse_specialist_payload(
+        _extract_task_payload(valuation_task),
+        ValuationAgentOutput,
+        fallback=lambda: analyze_valuation(request, tool_results),
+    )
+    risk_output = _parse_specialist_payload(
+        _extract_task_payload(risk_task),
+        RiskAgentOutput,
+        fallback=lambda: analyze_risk(request, tool_results),
+    )
+
+    return AgentOutputBundle(
+        market_data_agent=market_output,
+        sentiment_agent=sentiment_output,
+        valuation_agent=valuation_output,
+        risk_agent=risk_output,
+    )
+
+
+def _parse_specialist_payload(
+    payload: Any | None,
+    model_type: type[MarketDataAgentOutput | SentimentAgentOutput | ValuationAgentOutput | RiskAgentOutput],
+    *,
+    fallback: Callable[[], Any],
+) -> Any:
+    if payload is None:
+        return fallback()
+
+    pydantic_output = getattr(payload, "pydantic", None)
+    if isinstance(pydantic_output, model_type):
+        return pydantic_output
+    if isinstance(payload, model_type):
+        return payload
+
+    try:
+        if isinstance(payload, dict):
+            return model_type.model_validate(payload)
+        return parse_model_output(payload, model_type)
+    except Exception:
+        return fallback()

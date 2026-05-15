@@ -16,6 +16,7 @@ class AgentSettings(BaseModel):
     agent_timeout_seconds: int = Field(default=180, ge=1)
     advisory_use_crewai_manager: bool = False
     advisory_output_dir: Path = Path("outputs/advisory_decisions")
+    crewai_verbose: bool = False
     crewai_tracing: bool = True
     crewai_share_crew: bool = False
 
@@ -62,6 +63,11 @@ def load_settings(env_file: str | Path | None = ".env") -> AgentSettings:
         advisory_output_dir=Path(
             _read_env("ADVISORY_OUTPUT_DIR", values)
             or AgentSettings.model_fields["advisory_output_dir"].default
+        ),
+        crewai_verbose=_read_bool_env(
+            "CREWAI_VERBOSE",
+            values,
+            default=AgentSettings.model_fields["crewai_verbose"].default,
         ),
         crewai_tracing=_read_bool_env(
             "CREWAI_TRACING_ENABLED",

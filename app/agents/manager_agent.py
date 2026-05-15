@@ -16,18 +16,23 @@ def create_manager_agent(
     max_execution_time: int | None = None,
 ) -> Any:
     _require_crewai()
-    kwargs: dict[str, Any] = agent_config("manager_agent")
-    kwargs.update(
-        {
-            "llm": llm,
-            "allow_delegation": True,
-            "max_iter": max_iter,
-            "verbose": verbose,
-        }
+    config = agent_config("manager_agent")
+    if max_execution_time is None:
+        return Agent(
+            config=config,
+            llm=llm,
+            allow_delegation=True,
+            max_iter=max_iter,
+            verbose=verbose,
+        )
+    return Agent(
+        config=config,
+        llm=llm,
+        allow_delegation=True,
+        max_iter=max_iter,
+        max_execution_time=max_execution_time,
+        verbose=verbose,
     )
-    if max_execution_time is not None:
-        kwargs["max_execution_time"] = max_execution_time
-    return Agent(**kwargs)
 
 
 def _require_crewai() -> None:

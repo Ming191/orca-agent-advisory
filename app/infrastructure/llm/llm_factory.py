@@ -77,7 +77,11 @@ def _resolve_model(settings: AgentSettings, provider: str, override: str | None)
     if provider == "openai":
         raw_model = raw_model or "gpt-4o-mini"
         return raw_model if "/" in raw_model or raw_model.startswith("openai/") else f"openai/{raw_model}"
-    if provider in {"openai_compatible", "litellm"}:
+    if provider == "openai_compatible":
+        if raw_model is None:
+            raise ValueError(f"llm_model is required for provider {provider}")
+        return raw_model if raw_model.startswith("openai/") else f"openai/{raw_model}"
+    if provider == "litellm":
         if raw_model is None:
             raise ValueError(f"llm_model is required for provider {provider}")
         return raw_model

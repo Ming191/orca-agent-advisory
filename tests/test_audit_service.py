@@ -5,7 +5,7 @@ from pathlib import Path
 from app.config import AgentSettings
 from app.schemas.request import AdvisoryDecisionRequest
 from app.schemas.tool_results import ToolResultBundle
-from app.services.audit_service import create_audit_metadata, create_retrieved_tool_audit
+from app.application.services.audit_service import create_audit_metadata, create_retrieved_tool_audit
 
 
 SAMPLES_DIR = Path(__file__).resolve().parents[1] / "samples"

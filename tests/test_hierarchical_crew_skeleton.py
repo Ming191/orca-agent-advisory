@@ -3,12 +3,12 @@ from pathlib import Path
 from typing import Any
 
 from app.config import AgentSettings
-from app.agents import manager_agent
+from app.infrastructure.crewai.agents import manager_agent
 from app.schemas.decision import SingleSymbolDecision
 from app.schemas.request import AdvisoryDecisionRequest
 from app.schemas.tool_results import ToolResultBundle
-from app.services import crew_runner
-from app.services.crew_runner import HierarchicalCrewRunner
+from app.infrastructure.crewai import crew_runner
+from app.infrastructure.crewai.crew_runner import HierarchicalCrewRunner
 
 
 SAMPLES_DIR = Path(__file__).resolve().parents[1] / "samples"

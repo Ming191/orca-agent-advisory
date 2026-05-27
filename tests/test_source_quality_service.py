@@ -3,7 +3,7 @@ from pathlib import Path
 
 from app.schemas.request import AdvisoryDecisionRequest
 from app.schemas.tool_results import ToolResultBundle
-from app.services.source_quality_service import assess_source_quality
+from app.application.services.source_quality_service import assess_source_quality
 
 
 SAMPLES_DIR = Path(__file__).resolve().parents[1] / "samples"

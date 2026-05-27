@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 
 from app.config import load_settings
-from app.llm.deepseek_client import CrewAIUnavailableError
-from app.llm.llm_factory import create_deepseek_llm
+from app.infrastructure.llm.deepseek_client import CrewAIUnavailableError
+from app.infrastructure.llm.llm_factory import create_deepseek_llm
 from app.schemas.decision import SingleSymbolDecision
 from app.validators.output_repair import JsonOutputParseError, parse_json_object, parse_model_output
 

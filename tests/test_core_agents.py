@@ -1,19 +1,23 @@
 import json
 from pathlib import Path
 
-from app.agents.data_agent import analyze_market_data, create_market_data_agent
-from app.agents.risk_agent import analyze_risk, create_risk_agent
-from app.agents.sentiment_agent import analyze_sentiment, create_sentiment_agent
-from app.agents.valuation_agent import analyze_valuation, create_valuation_agent
-from app.crews.config_loader import load_agents_config, load_tasks_config
+from app.application.specialists import analyze_market_data
+from app.infrastructure.crewai.agents.data_agent import create_market_data_agent
+from app.application.specialists import analyze_risk
+from app.infrastructure.crewai.agents.risk_agent import create_risk_agent
+from app.application.specialists import analyze_sentiment
+from app.infrastructure.crewai.agents.sentiment_agent import create_sentiment_agent
+from app.application.specialists import analyze_valuation
+from app.infrastructure.crewai.agents.valuation_agent import create_valuation_agent
+from app.infrastructure.crewai.config_loader import load_agents_config, load_tasks_config
 from app.schemas.enums import AgentStatus, RiskLabel, SentimentLabel, ToolStatus, ValuationLabel
 from app.schemas.request import AdvisoryDecisionRequest
 from app.schemas.tool_results import ToolResultBundle
-from app.services.crew_runner import build_mocked_upstream_tools
-from app.tasks.data_tasks import create_market_data_task
-from app.tasks.risk_tasks import create_risk_task
-from app.tasks.sentiment_tasks import create_sentiment_task
-from app.tasks.valuation_tasks import create_valuation_task
+from app.infrastructure.crewai.crew_runner import build_mocked_upstream_tools
+from app.infrastructure.crewai.tasks.data_tasks import create_market_data_task
+from app.infrastructure.crewai.tasks.risk_tasks import create_risk_task
+from app.infrastructure.crewai.tasks.sentiment_tasks import create_sentiment_task
+from app.infrastructure.crewai.tasks.valuation_tasks import create_valuation_task
 
 
 SAMPLES_DIR = Path(__file__).resolve().parents[1] / "samples"

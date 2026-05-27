@@ -1,5 +1,5 @@
 from app.schemas.enums import ConflictLevel, ReviewReason, RiskLabel
-from app.services.human_review_service import evaluate_human_review
+from app.application.services.human_review_service import evaluate_human_review
 
 
 def test_human_review_not_required_for_clear_low_risk_case() -> None:

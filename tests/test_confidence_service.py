@@ -1,5 +1,5 @@
 from app.schemas.enums import RiskLabel
-from app.services.confidence_service import ConfidenceInputs, aggregate_confidence
+from app.application.services.confidence_service import ConfidenceInputs, aggregate_confidence
 
 
 def test_confidence_aggregates_weighted_inputs_and_caps_by_high_risk() -> None:

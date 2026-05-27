@@ -8,19 +8,21 @@ from pydantic import ValidationError
 from app.schemas.decision import ErrorResponse, PortfolioDecision, SingleSymbolDecision
 from app.schemas.request import AdvisoryDecisionRequest
 from app.schemas.tool_results import ToolResultValidationError
-from app.services.decision_service import AdvisoryDecisionService, DecisionValidationError
-from app.services.tool_result_provider import SampleToolResultProvider, ToolResultProvider
+from app.config import load_settings
+from app.application.ports.tool_result_provider import ToolResultProvider
+from app.application.use_cases.advisory_decision_service import AdvisoryDecisionService, DecisionValidationError
+from app.bootstrap.container import build_decision_service, build_tool_result_provider
 
 
 app = FastAPI(title="Orca Agent Advisory API", version="0.1.0")
 
 
 def get_decision_service() -> AdvisoryDecisionService:
-    return AdvisoryDecisionService()
+    return build_decision_service(load_settings())
 
 
 def get_tool_result_provider() -> ToolResultProvider:
-    return SampleToolResultProvider()
+    return build_tool_result_provider(load_settings())
 
 
 @app.exception_handler(RequestValidationError)

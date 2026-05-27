@@ -12,7 +12,7 @@ from app.schemas.enums import (
     SignalStance,
     ValuationLabel,
 )
-from app.services.conflict_resolution_service import resolve_conflicts
+from app.application.services.conflict_resolution_service import resolve_conflicts
 
 
 SAMPLES_DIR = Path(__file__).resolve().parents[1] / "samples"

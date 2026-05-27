@@ -4,6 +4,14 @@ from pathlib import Path
 import pytest
 
 from app.config import AgentSettings
+from app.application.ports.crew_orchestrator import CrewOrchestratedOutputs
+from app.application.use_cases.advisory_decision_service import (
+    AdvisoryDecisionService,
+    DecisionValidationError,
+    build_deterministic_manager_synthesis,
+    run_specialist_analysis,
+)
+from app.infrastructure.storage.output_store import DecisionOutputStore
 from app.schemas.decision import (
     PortfolioAllocation,
     PortfolioDecision,
@@ -14,15 +22,22 @@ from app.schemas.enums import PortfolioAction, Recommendation, ReviewReason, Ris
 from app.schemas.manager_outputs import ManagerSynthesisOutput
 from app.schemas.request import AdvisoryDecisionRequest
 from app.schemas.tool_results import ToolResultBundle, ToolResultValidationError
-from app.services.crew_runner import CrewOrchestratedOutputs
-from app.services.decision_service import (
-    AdvisoryDecisionService,
-    DecisionValidationError,
-    run_specialist_analysis,
-)
 
 
 SAMPLES_DIR = Path(__file__).resolve().parents[1] / "samples"
+
+
+class FakeCrewRunner:
+    def run_orchestrated(
+        self,
+        request: AdvisoryDecisionRequest,
+        tool_results: ToolResultBundle,
+    ) -> CrewOrchestratedOutputs:
+        agent_outputs = run_specialist_analysis(request, tool_results)
+        return CrewOrchestratedOutputs(
+            agent_outputs=agent_outputs,
+            manager_payload=build_deterministic_manager_synthesis(request, tool_results, agent_outputs),
+        )
 
 
 def load_sample(name: str) -> dict:
@@ -34,9 +49,10 @@ def decide(request_sample: str, tool_result_sample: str, output_dir: Path):
     bundle = ToolResultBundle.model_validate(load_sample(tool_result_sample))
     service = AdvisoryDecisionService(
         settings=AgentSettings(
-            advisory_use_crewai_manager=False,
             advisory_output_dir=output_dir,
-        )
+        ),
+        crew_runner=FakeCrewRunner(),
+        output_store=DecisionOutputStore(output_dir),
     )
     return service.decide(request, bundle)
 
@@ -46,9 +62,10 @@ def test_normal_single_symbol_flow_returns_final_decision_with_audit(tmp_path: P
     bundle = ToolResultBundle.model_validate(load_sample("normal_tool_results.json"))
     service = AdvisoryDecisionService(
         settings=AgentSettings(
-            advisory_use_crewai_manager=False,
             advisory_output_dir=tmp_path,
-        )
+        ),
+        crew_runner=FakeCrewRunner(),
+        output_store=DecisionOutputStore(tmp_path),
     )
 
     decision = service.decide(request, bundle)
@@ -109,7 +126,7 @@ def test_portfolio_flow_returns_valid_allocation(tmp_path: Path) -> None:
 def test_missing_required_market_tool_result_fails_before_agents() -> None:
     request = AdvisoryDecisionRequest.model_validate(load_sample("normal_request.json"))
     bundle = ToolResultBundle.model_validate(load_sample("unavailable_market_tool_results.json"))
-    service = AdvisoryDecisionService(settings=AgentSettings(advisory_use_crewai_manager=False))
+    service = AdvisoryDecisionService(settings=AgentSettings(), crew_runner=FakeCrewRunner())
 
     with pytest.raises(ToolResultValidationError, match="market_features is required"):
         service.decide(request, bundle)
@@ -148,6 +165,7 @@ def test_single_symbol_manager_synthesis_requires_recommendation(tmp_path: Path)
     service = AdvisoryDecisionService(
         settings=AgentSettings(advisory_use_crewai_manager=True, advisory_output_dir=tmp_path),
         crew_runner=PortfolioDraftRunner(),
+        output_store=DecisionOutputStore(tmp_path),
     )
 
     with pytest.raises(DecisionValidationError, match="proposed_recommendation"):

@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from typing import Mapping
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 
 class AgentSettings(BaseModel):
@@ -11,14 +11,19 @@ class AgentSettings(BaseModel):
     deepseek_api_key: SecretStr | None = None
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-v4-flash"
+    llm_provider: str = "deepseek"
+    llm_model: str | None = None
+    llm_base_url: str | None = None
+    llm_api_key: SecretStr | None = None
     agent_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     agent_max_retries: int = Field(default=3, ge=0)
     agent_timeout_seconds: int = Field(default=180, ge=1)
-    advisory_use_crewai_manager: bool = False
+    advisory_use_crewai_manager: bool = True
     advisory_output_dir: Path = Path("outputs/advisory_decisions")
     crewai_verbose: bool = False
     crewai_tracing: bool = True
     crewai_share_crew: bool = False
+    tool_result_provider: str = "sample"
 
     @field_validator("deepseek_base_url", "deepseek_model")
     @classmethod
@@ -28,10 +33,45 @@ class AgentSettings(BaseModel):
             raise ValueError("value cannot be blank")
         return cleaned
 
+    @field_validator("llm_provider")
+    @classmethod
+    def normalize_llm_provider(cls, value: str) -> str:
+        cleaned = value.strip().lower()
+        if cleaned not in {"deepseek", "openai", "openai_compatible", "litellm"}:
+            raise ValueError("llm_provider must be one of: deepseek, openai, openai_compatible, litellm")
+        return cleaned
+
+    @field_validator("llm_model", "llm_base_url")
+    @classmethod
+    def normalize_optional_llm_string(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+    @model_validator(mode="after")
+    def apply_deepseek_llm_defaults(self) -> "AgentSettings":
+        if self.llm_provider == "deepseek":
+            if self.llm_model is None:
+                self.llm_model = self.deepseek_model
+            if self.llm_base_url is None:
+                self.llm_base_url = self.deepseek_base_url
+            if self.llm_api_key is None:
+                self.llm_api_key = self.deepseek_api_key
+        return self
+
     @field_validator("advisory_output_dir")
     @classmethod
     def normalize_output_dir(cls, value: Path) -> Path:
         return Path(value)
+
+    @field_validator("tool_result_provider")
+    @classmethod
+    def normalize_tool_result_provider(cls, value: str) -> str:
+        cleaned = value.strip().lower()
+        if cleaned not in {"sample", "bigdata"}:
+            raise ValueError("tool_result_provider must be one of: sample, bigdata")
+        return cleaned
 
 
 def load_settings(env_file: str | Path | None = ".env") -> AgentSettings:
@@ -43,6 +83,14 @@ def load_settings(env_file: str | Path | None = ".env") -> AgentSettings:
         or AgentSettings.model_fields["deepseek_base_url"].default,
         deepseek_model=_read_env("DEEPSEEK_MODEL", values)
         or AgentSettings.model_fields["deepseek_model"].default,
+        llm_provider=(
+            _read_env("LLM_PROVIDER", values)
+            or _read_env("ORCA_LLM_PROVIDER", values)
+            or AgentSettings.model_fields["llm_provider"].default
+        ),
+        llm_model=_read_env("LLM_MODEL", values) or _read_env("ORCA_LLM_MODEL", values),
+        llm_base_url=_read_env("LLM_BASE_URL", values) or _read_env("ORCA_LLM_BASE_URL", values),
+        llm_api_key=_read_env("LLM_API_KEY", values) or _read_env("ORCA_LLM_API_KEY", values),
         agent_temperature=float(
             _read_env("AGENT_TEMPERATURE", values)
             or AgentSettings.model_fields["agent_temperature"].default
@@ -78,6 +126,11 @@ def load_settings(env_file: str | Path | None = ".env") -> AgentSettings:
             "CREWAI_SHARE_CREW",
             values,
             default=AgentSettings.model_fields["crewai_share_crew"].default,
+        ),
+        tool_result_provider=(
+            _read_env("TOOL_RESULT_PROVIDER", values)
+            or _read_env("ORCA_TOOL_RESULT_PROVIDER", values)
+            or AgentSettings.model_fields["tool_result_provider"].default
         ),
     )
 

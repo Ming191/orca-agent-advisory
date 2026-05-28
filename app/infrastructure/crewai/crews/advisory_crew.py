@@ -33,8 +33,8 @@ except ModuleNotFoundError:
 class AdvisorySpecialistCrew:
     """CrewAI-native specialist crew using YAML-backed agent and task config."""
 
-    agents_config = "config/agents.yaml"
-    tasks_config = "config/tasks.yaml"
+    agents_config = "../config/agents.yaml"
+    tasks_config = "../config/tasks.yaml"
 
     def __init__(
         self,

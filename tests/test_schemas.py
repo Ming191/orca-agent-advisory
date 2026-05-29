@@ -110,6 +110,32 @@ def test_missing_optional_tool_results_do_not_fail_request(sample_name: str) -> 
     bundle.validate_required_for(request)
 
 
+def test_optional_sentiment_and_valuation_metadata_parse() -> None:
+    payload = load_sample("normal_tool_results.json")
+    payload["sentiment_snapshot"]["data"]["AAPL"].update(
+        {
+            "latest_article_published_at": "2026-05-13T14:00:00Z",
+            "oldest_article_published_at": "2026-05-10T14:00:00Z",
+            "sentiment_scored_at": "2026-05-13T15:00:00Z",
+            "stale_article_count": 1,
+        }
+    )
+    payload["valuation_snapshot"]["data"]["AAPL"].update(
+        {
+            "valuation_method": "relative_pe",
+            "valuation_quality": "HIGH",
+            "valuation_fetched_at": "2026-05-13T15:00:00Z",
+            "fundamentals_as_of": "2026-03-31T00:00:00Z",
+            "sector_sample_count": 32,
+        }
+    )
+
+    bundle = ToolResultBundle.model_validate(payload)
+
+    assert bundle.sentiment_snapshot.data["AAPL"].stale_article_count == 1
+    assert bundle.valuation_snapshot.data["AAPL"].valuation_method == "relative_pe"
+
+
 def test_portfolio_mode_requires_risk_and_portfolio_tool_results() -> None:
     request = AdvisoryDecisionRequest.model_validate(load_sample("portfolio_allocation_request.json"))
     payload = load_sample("portfolio_allocation_tool_results.json")
@@ -181,6 +207,10 @@ def test_final_output_contract_snapshot() -> None:
             "tool_result_bundle_hash": "sha256:tools001",
         },
         "data_citations": ["postgresql.real_time_prices:AAPL:2026-05-13T15:45:00Z"],
+        "debate_applied": False,
+        "debate_summary": None,
+        "bullish_critic_points": [],
+        "bearish_critic_points": [],
         "not_financial_advice": True,
         "symbol": "AAPL",
         "recommendation": "HOLD",

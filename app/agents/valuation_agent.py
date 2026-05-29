@@ -49,6 +49,7 @@ def analyze_valuation(
     missing_fields: list[str] = []
     labels: list[ValuationLabel] = []
     drivers: list[str] = []
+    quality_limits: list[str] = []
     for symbol in request.symbols:
         snapshot = valuation_result.data.get(symbol)
         if snapshot is None:
@@ -61,6 +62,17 @@ def analyze_valuation(
             drivers.append(f"{symbol} sector_pe_ratio={snapshot.sector_pe_ratio}")
         if snapshot.upside_downside_pct is not None:
             drivers.append(f"{symbol} upside_downside_pct={snapshot.upside_downside_pct}")
+        if snapshot.valuation_method:
+            drivers.append(f"{symbol} valuation_method={snapshot.valuation_method}")
+        if snapshot.valuation_quality:
+            quality = snapshot.valuation_quality.upper()
+            drivers.append(f"{symbol} valuation_quality={snapshot.valuation_quality}")
+            if quality == "LOW":
+                quality_limits.append("VALUATION_QUALITY_LOW")
+            elif quality == "UNKNOWN":
+                quality_limits.append("VALUATION_QUALITY_UNKNOWN")
+        if snapshot.sector_sample_count is not None:
+            drivers.append(f"{symbol} sector_sample_count={snapshot.sector_sample_count}")
 
     if not labels:
         return ValuationAgentOutput(
@@ -74,14 +86,26 @@ def analyze_valuation(
             valuation_drivers=[],
         )
 
+    limitations = list(dict.fromkeys(quality_limits))
+    if valuation_result.freshness.is_stale:
+        limitations.append("VALUATION_FRESHNESS_STALE")
+    label = _dominant_label(labels)
+    confidence = 0.58
+    if ValuationLabel.UNKNOWN in labels or "VALUATION_QUALITY_UNKNOWN" in limitations or label == ValuationLabel.UNKNOWN:
+        confidence = 0.35
+    elif "VALUATION_QUALITY_LOW" in limitations:
+        confidence = 0.45
+    if valuation_result.freshness.is_stale:
+        confidence = min(confidence, 0.45)
+
     return ValuationAgentOutput(
-        status=AgentStatus.DEGRADED if missing_fields else AgentStatus.SUCCESS,
+        status=AgentStatus.DEGRADED if missing_fields or limitations else AgentStatus.SUCCESS,
         summary="Valuation was assessed only from FundamentalsTool snapshots.",
-        confidence=0.58 if ValuationLabel.UNKNOWN not in labels else 0.4,
+        confidence=confidence,
         missing_fields=missing_fields,
-        limitations=[],
+        limitations=limitations,
         source_refs=source_refs,
-        valuation_label=_dominant_label(labels),
+        valuation_label=label,
         valuation_drivers=drivers,
     )
 

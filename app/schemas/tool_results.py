@@ -80,6 +80,10 @@ class SentimentSnapshot(BaseModel):
     sentiment_score: float = Field(ge=-1.0, le=1.0)
     article_count: int = Field(ge=0)
     top_drivers: list[str] = Field(default_factory=list)
+    latest_article_published_at: datetime | None = None
+    oldest_article_published_at: datetime | None = None
+    sentiment_scored_at: datetime | None = None
+    stale_article_count: int | None = Field(default=None, ge=0)
 
 
 class SentimentToolResult(BaseToolResult):
@@ -94,6 +98,11 @@ class ValuationSnapshot(BaseModel):
     sector_pe_ratio: float | None = Field(default=None, gt=0.0)
     fair_value_estimate: float | None = Field(default=None, gt=0.0)
     upside_downside_pct: float | None = None
+    valuation_method: str | None = None
+    valuation_quality: str | None = None
+    valuation_fetched_at: datetime | None = None
+    fundamentals_as_of: datetime | None = None
+    sector_sample_count: int | None = Field(default=None, ge=0)
 
 
 class ValuationToolResult(BaseToolResult):

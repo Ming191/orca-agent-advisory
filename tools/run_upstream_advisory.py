@@ -48,11 +48,11 @@ def build_tool_result_bundle(
 ) -> dict[str, Any]:
     rows_by_symbol = {str(row.get("Symbol") or row.get("symbol") or "").upper(): row for row in upstream_rows}
     now = request.as_of_timestamp or datetime.now(UTC)
-    freshness = {
-        "is_stale": False,
-        "last_updated_at": now.isoformat(),
-        "max_age_seconds": 86400,
-    }
+    market_times = []
+    ml_times = []
+    risk_times = []
+    sentiment_times = []
+    valuation_times = []
 
     market_data: dict[str, Any] = {}
     ml_data: dict[str, Any] = {}
@@ -77,6 +77,10 @@ def build_tool_result_bundle(
         risk_label = _risk_label(risk_prob)
         row_source_ref = str(row.get("source_ref") or f"{source_ref}:{symbol}")
         source_refs.append(row_source_ref)
+        feature_time = _timestamp(row, "Datetime", "source_feature_process_date", "process_date")
+        market_times.append(feature_time)
+        ml_times.append(feature_time)
+        risk_times.append(feature_time)
         max_drawdown_90d = _float(row, "maxdd90", "max_drawdown_90d", default=_float(row, "maxdd20", default=0.0))
         risk_window = str(row.get("risk_window") or ("90d" if "maxdd90" in row else "20d_proxy"))
 
@@ -108,6 +112,9 @@ def build_tool_result_bundle(
             "confidence_cap": max(0.25, min(0.9, 1.0 - risk_prob / 2)),
         }
         if _has_any(row, "sentiment_score", "sentiment_label", "article_count", "top_drivers"):
+            latest_article_published_at = _timestamp(row, "latest_article_published_at")
+            sentiment_scored_at = _timestamp(row, "sentiment_scored_at", "process_date_y")
+            sentiment_times.append(sentiment_scored_at or latest_article_published_at)
             sentiment_source_refs.extend(
                 _list_value(_first(row, "sentiment_source_refs", "sentiment_source_ref", "source_refs_x", "source_refs"))
             )
@@ -117,6 +124,10 @@ def build_tool_result_bundle(
                 "sentiment_score": score,
                 "article_count": int(_float(row, "article_count", default=0.0)),
                 "top_drivers": _list_value(row.get("top_drivers")),
+                "latest_article_published_at": _iso_or_none(latest_article_published_at),
+                "oldest_article_published_at": _iso_or_none(_timestamp(row, "oldest_article_published_at")),
+                "sentiment_scored_at": _iso_or_none(sentiment_scored_at),
+                "stale_article_count": _nullable_int(row, "stale_article_count"),
             }
         elif include_optional_placeholders:
             sentiment_data[symbol] = {
@@ -127,6 +138,8 @@ def build_tool_result_bundle(
             }
 
         if _has_any(row, "valuation_label", "pe_ratio", "sector_pe_ratio", "fair_value_estimate", "upside_downside_pct"):
+            valuation_time = _timestamp(row, "valuation_fetched_at", "process_date", "fundamentals_as_of")
+            valuation_times.append(valuation_time)
             valuation_source_refs.extend(
                 _list_value(_first(row, "valuation_source_refs", "valuation_source_ref", "source_refs_y", "source_refs"))
             )
@@ -136,6 +149,11 @@ def build_tool_result_bundle(
                 "sector_pe_ratio": _nullable_float(row, "sector_pe_ratio"),
                 "fair_value_estimate": _nullable_float(row, "fair_value_estimate"),
                 "upside_downside_pct": _nullable_float(row, "upside_downside_pct"),
+                "valuation_method": _str_or_none(_first(row, "valuation_method")),
+                "valuation_quality": _str_or_none(_first(row, "valuation_quality")),
+                "valuation_fetched_at": _iso_or_none(_timestamp(row, "valuation_fetched_at")),
+                "fundamentals_as_of": _iso_or_none(_timestamp(row, "fundamentals_as_of")),
+                "sector_sample_count": _nullable_int(row, "sector_sample_count"),
             }
         elif include_optional_placeholders:
             valuation_data[symbol] = {
@@ -150,20 +168,20 @@ def build_tool_result_bundle(
         "status": "SUCCESS",
         "request_id": request.request_id,
         "as_of_timestamp": now.isoformat(),
-        "freshness": freshness,
         "source_refs": source_refs or [source_ref],
     }
     sentiment_base = {**base, "source_refs": _unique(sentiment_source_refs) or base["source_refs"]}
     valuation_base = {**base, "source_refs": _unique(valuation_source_refs) or base["source_refs"]}
     bundle = {
-        "market_features": {**base, "tool": "MarketFeatureTool", "data": market_data},
-        "ml_predictions": {**base, "tool": "MlPredictionTool", "data": ml_data},
-        "risk_snapshot": {**base, "tool": "RiskFeatureTool", "data": risk_data},
+        "market_features": {**base, "freshness": _freshness(market_times, now, 86400), "tool": "MarketFeatureTool", "data": market_data},
+        "ml_predictions": {**base, "freshness": _freshness(ml_times, now, 86400), "tool": "MlPredictionTool", "data": ml_data},
+        "risk_snapshot": {**base, "freshness": _freshness(risk_times, now, 86400), "tool": "RiskFeatureTool", "data": risk_data},
     }
     if sentiment_data:
-        bundle["sentiment_snapshot"] = {**sentiment_base, "tool": "NewsSentimentTool", "data": sentiment_data}
+        sentiment_max_age = 86400 if any(_timestamp(row, "sentiment_scored_at", "process_date_y") for row in rows_by_symbol.values()) else 604800
+        bundle["sentiment_snapshot"] = {**sentiment_base, "freshness": _freshness(sentiment_times, now, sentiment_max_age), "tool": "NewsSentimentTool", "data": sentiment_data}
     if valuation_data:
-        bundle["valuation_snapshot"] = {**valuation_base, "tool": "FundamentalsTool", "data": valuation_data}
+        bundle["valuation_snapshot"] = {**valuation_base, "freshness": _freshness(valuation_times, now, 7776000), "tool": "FundamentalsTool", "data": valuation_data}
     return bundle
 
 
@@ -225,6 +243,43 @@ def _nullable_float(row: dict[str, Any], *keys: str) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _nullable_int(row: dict[str, Any], *keys: str) -> int | None:
+    value = _optional_float(row, *keys)
+    return int(value) if value is not None else None
+
+
+def _timestamp(row: dict[str, Any], *keys: str) -> datetime | None:
+    value = _first(row, *keys)
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
+    if isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+        except ValueError:
+            return None
+    return None
+
+
+def _iso_or_none(value: datetime | None) -> str | None:
+    return value.isoformat() if value else None
+
+
+def _str_or_none(value: Any) -> str | None:
+    return str(value) if value is not None else None
+
+
+def _freshness(timestamps: list[datetime | None], as_of: datetime, max_age_seconds: int) -> dict[str, Any]:
+    known = [ts for ts in timestamps if ts is not None]
+    last_updated = max(known) if known else as_of
+    age_seconds = (as_of - last_updated).total_seconds()
+    return {
+        "is_stale": age_seconds > max_age_seconds,
+        "last_updated_at": last_updated.isoformat(),
+        "max_age_seconds": max_age_seconds,
+    }
 
 
 def _first(row: dict[str, Any], *keys: str) -> Any:

@@ -74,3 +74,39 @@ def test_missing_risk_prob_uses_neutral_schema_fallback_without_damping_ml_proba
     assert ml["probability_up"] == 0.8
     assert "risk_prob unavailable; using neutral fallback" in risk["risk_factors"]
     assert risk["risk_factors"][0] == "upstream risk_prob=0.500"
+
+
+def test_per_tool_freshness_and_optional_metadata_from_upstream_timestamps() -> None:
+    bundle = build_tool_result_bundle(
+        _request(["AAA"]),
+        [
+            {
+                "Symbol": "AAA",
+                "Datetime": "2026-05-28T23:30:00+00:00",
+                "sentiment_score": 0.2,
+                "sentiment_scored_at": "2026-05-27T00:00:00+00:00",
+                "latest_article_published_at": "2026-05-26T00:00:00+00:00",
+                "oldest_article_published_at": "2026-05-25T00:00:00+00:00",
+                "stale_article_count": 2,
+                "valuation_label": "FAIRLY_VALUED",
+                "valuation_method": "relative_pe",
+                "valuation_quality": "LOW",
+                "valuation_fetched_at": "2026-01-01T00:00:00+00:00",
+                "fundamentals_as_of": "2025-12-31T00:00:00+00:00",
+                "sector_sample_count": 4,
+            }
+        ],
+        "base",
+    )
+    ToolResultBundle.model_validate(bundle)
+
+    assert bundle["market_features"]["freshness"]["is_stale"] is False
+    assert bundle["sentiment_snapshot"]["freshness"]["is_stale"] is True
+    assert bundle["valuation_snapshot"]["freshness"]["is_stale"] is True
+    sentiment = bundle["sentiment_snapshot"]["data"]["AAA"]
+    valuation = bundle["valuation_snapshot"]["data"]["AAA"]
+    assert sentiment["stale_article_count"] == 2
+    assert sentiment["latest_article_published_at"] == "2026-05-26T00:00:00+00:00"
+    assert valuation["valuation_method"] == "relative_pe"
+    assert valuation["valuation_quality"] == "LOW"
+    assert valuation["sector_sample_count"] == 4

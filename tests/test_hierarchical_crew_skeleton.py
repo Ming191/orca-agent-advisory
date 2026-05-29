@@ -3,12 +3,13 @@ from pathlib import Path
 from typing import Any
 
 from app.config import AgentSettings
-from app.agents import manager_agent
+from app.agents import data_agent, manager_agent, risk_agent, sentiment_agent, valuation_agent
 from app.schemas.decision import SingleSymbolDecision
 from app.schemas.request import AdvisoryDecisionRequest
 from app.schemas.tool_results import ToolResultBundle
 from app.services import crew_runner
 from app.services.crew_runner import HierarchicalCrewRunner
+from app.tasks import data_tasks, manager_tasks, risk_tasks, sentiment_tasks, valuation_tasks
 
 
 SAMPLES_DIR = Path(__file__).resolve().parents[1] / "samples"
@@ -54,6 +55,7 @@ class FakeTask:
         output_pydantic: Any | None = None,
         expected_output: str | None = None,
     ) -> None:
+        self.name = config.get("name")
         self.config = config
         self.agent = agent
         self.context = context or []
@@ -89,6 +91,15 @@ class FakeCrew:
 
 def test_hierarchical_crew_uses_custom_manager_and_specialist_tools(monkeypatch) -> None:
     monkeypatch.setattr(manager_agent, "Agent", FakeAgent)
+    monkeypatch.setattr(data_agent, "Agent", FakeAgent)
+    monkeypatch.setattr(sentiment_agent, "Agent", FakeAgent)
+    monkeypatch.setattr(valuation_agent, "Agent", FakeAgent)
+    monkeypatch.setattr(risk_agent, "Agent", FakeAgent)
+    monkeypatch.setattr(data_tasks, "Task", FakeTask)
+    monkeypatch.setattr(sentiment_tasks, "Task", FakeTask)
+    monkeypatch.setattr(valuation_tasks, "Task", FakeTask)
+    monkeypatch.setattr(risk_tasks, "Task", FakeTask)
+    monkeypatch.setattr(manager_tasks, "Task", FakeTask)
     monkeypatch.setattr(crew_runner, "Crew", FakeCrew)
     monkeypatch.setattr(crew_runner, "Process", FakeProcess)
 
@@ -96,7 +107,7 @@ def test_hierarchical_crew_uses_custom_manager_and_specialist_tools(monkeypatch)
     bundle = ToolResultBundle.model_validate(load_sample("normal_tool_results.json"))
     runner = HierarchicalCrewRunner(
         settings=AgentSettings(),
-        llm_factory=lambda settings: "openai/gpt-4o-mini",
+        llm_factory=lambda settings: "deepseek/deepseek-v4-flash",
     )
 
     decision = runner.run(request, bundle)

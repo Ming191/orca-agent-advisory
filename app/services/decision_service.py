@@ -35,6 +35,7 @@ from app.schemas.tool_results import ToolResultBundle
 from app.services.audit_service import create_audit_metadata, create_retrieved_tool_audit
 from app.services.confidence_service import ConfidenceInputs, aggregate_confidence
 from app.services.conflict_resolution_service import resolve_conflicts
+from app.services.critic_service import run_critic_debate_stage
 from app.services.crew_runner import CrewOrchestratedOutputs, HierarchicalCrewRunner
 from app.services.human_review_service import evaluate_human_review
 from app.services.output_store import DecisionOutputStore
@@ -63,6 +64,8 @@ class AdvisoryDecisionService:
     ) -> DecisionResult:
         tool_results.validate_required_for(request)
         agent_outputs, synthesis = self._orchestrate(request, tool_results)
+        if self.settings.advisory_enable_critic_stage:
+            synthesis = run_critic_debate_stage(synthesis=synthesis, agent_outputs=agent_outputs)
         source_quality_assessment = assess_source_quality(request, tool_results)
 
         if request.decision_mode == DecisionMode.PORTFOLIO_RECOMMENDATION:
@@ -177,6 +180,10 @@ class AdvisoryDecisionService:
             audit=audit,
             retrieved_tool_audit=retrieved_tool_audit,
             data_citations=_unique([*synthesis.data_citations, *_tool_citations(tool_results)]),
+            debate_applied=synthesis.debate_applied,
+            debate_summary=synthesis.debate_summary,
+            bullish_critic_points=synthesis.bullish_critic_points,
+            bearish_critic_points=synthesis.bearish_critic_points,
             not_financial_advice=True,
             symbol=symbol,
             recommendation=recommendation,
@@ -245,6 +252,10 @@ class AdvisoryDecisionService:
             audit=audit,
             retrieved_tool_audit=retrieved_tool_audit,
             data_citations=_unique([*synthesis.data_citations, *_tool_citations(tool_results)]),
+            debate_applied=synthesis.debate_applied,
+            debate_summary=synthesis.debate_summary,
+            bullish_critic_points=synthesis.bullish_critic_points,
+            bearish_critic_points=synthesis.bearish_critic_points,
             not_financial_advice=True,
             risk_profile=request.user_context.risk_tolerance,
             portfolio_allocation=synthesis.portfolio_allocation,

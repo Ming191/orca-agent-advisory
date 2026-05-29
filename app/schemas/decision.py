@@ -88,6 +88,10 @@ class FinalDecisionBase(BaseModel):
     audit: AuditMetadata
     retrieved_tool_audit: RetrievedToolAudit
     data_citations: list[str] = Field(default_factory=list)
+    debate_applied: bool = False
+    debate_summary: str | None = None
+    bullish_critic_points: list[str] = Field(default_factory=list)
+    bearish_critic_points: list[str] = Field(default_factory=list)
     not_financial_advice: Literal[True]
 
     @model_validator(mode="after")

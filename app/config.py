@@ -19,6 +19,9 @@ class AgentSettings(BaseModel):
     agent_max_retries: int = Field(default=3, ge=0)
     agent_timeout_seconds: int = Field(default=180, ge=1)
     advisory_use_crewai_manager: bool = True
+    advisory_enable_critic_stage: bool = False
+    advisory_use_llm_critic_stage: bool = False
+    advisory_llm_critic_timeout_seconds: int = Field(default=60, ge=1)
     advisory_output_dir: Path = Path("outputs/advisory_decisions")
     crewai_verbose: bool = False
     crewai_tracing: bool = True
@@ -107,6 +110,20 @@ def load_settings(env_file: str | Path | None = ".env") -> AgentSettings:
             "ADVISORY_USE_CREWAI_MANAGER",
             values,
             default=AgentSettings.model_fields["advisory_use_crewai_manager"].default,
+        ),
+        advisory_enable_critic_stage=_read_bool_env(
+            "ADVISORY_ENABLE_CRITIC_STAGE",
+            values,
+            default=AgentSettings.model_fields["advisory_enable_critic_stage"].default,
+        ),
+        advisory_use_llm_critic_stage=_read_bool_env(
+            "ADVISORY_USE_LLM_CRITIC_STAGE",
+            values,
+            default=AgentSettings.model_fields["advisory_use_llm_critic_stage"].default,
+        ),
+        advisory_llm_critic_timeout_seconds=int(
+            _read_env("ADVISORY_LLM_CRITIC_TIMEOUT_SECONDS", values)
+            or AgentSettings.model_fields["advisory_llm_critic_timeout_seconds"].default
         ),
         advisory_output_dir=Path(
             _read_env("ADVISORY_OUTPUT_DIR", values)

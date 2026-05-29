@@ -49,12 +49,16 @@ def analyze_sentiment(
 
     average_abs_score = sum(abs(score) for score in scores) / len(scores)
     confidence = round(0.5 + min(average_abs_score, 1.0) * 0.3, 2)
+    limitations = []
+    if sentiment_result.freshness.is_stale:
+        limitations.append("SENTIMENT_FRESHNESS_STALE")
+        confidence = min(confidence, 0.45)
     return SentimentAgentOutput(
-        status=AgentStatus.DEGRADED if missing_fields else AgentStatus.SUCCESS,
+        status=AgentStatus.DEGRADED if missing_fields or limitations else AgentStatus.SUCCESS,
         summary="Sentiment was summarized from NewsSentimentTool snapshots.",
         confidence=confidence,
         missing_fields=missing_fields,
-        limitations=[],
+        limitations=limitations,
         source_refs=source_refs,
         sentiment_label=_dominant_sentiment_label(labels),
         top_drivers=list(dict.fromkeys(top_drivers)),

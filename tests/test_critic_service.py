@@ -5,8 +5,8 @@ from app.schemas.enums import InvestmentHorizon, PortfolioAction, Recommendation
 from app.schemas.manager_outputs import ManagerSynthesisOutput
 from app.schemas.request import AdvisoryDecisionRequest
 from app.schemas.tool_results import ToolResultBundle
-from app.application.decision.manager_synthesis_builder import run_specialist_analysis
 from app.application.services.critic_service import run_critic_debate_stage
+from conftest import fixture_agent_outputs
 
 
 SAMPLES_DIR = Path(__file__).resolve().parents[1] / "samples"
@@ -19,7 +19,7 @@ def load_sample(name: str) -> dict:
 def test_critic_debate_can_downgrade_buy_under_bearish_pressure() -> None:
     request = AdvisoryDecisionRequest.model_validate(load_sample("high_risk_request.json"))
     bundle = ToolResultBundle.model_validate(load_sample("high_risk_tool_results.json"))
-    outputs = run_specialist_analysis(request, bundle)
+    outputs = fixture_agent_outputs(request, bundle)
     synthesis = ManagerSynthesisOutput(
         summary="Draft BUY before critic debate.",
         time_horizon=InvestmentHorizon.SHORT_TERM,
@@ -39,7 +39,7 @@ def test_critic_debate_can_downgrade_buy_under_bearish_pressure() -> None:
 def test_critic_debate_preserves_hold_when_signals_balanced() -> None:
     request = AdvisoryDecisionRequest.model_validate(load_sample("normal_request.json"))
     bundle = ToolResultBundle.model_validate(load_sample("normal_tool_results.json"))
-    outputs = run_specialist_analysis(request, bundle)
+    outputs = fixture_agent_outputs(request, bundle)
     synthesis = ManagerSynthesisOutput(
         summary="Balanced HOLD draft.",
         time_horizon=InvestmentHorizon.SHORT_TERM,
@@ -56,7 +56,7 @@ def test_critic_debate_preserves_hold_when_signals_balanced() -> None:
 def test_critic_debate_can_downgrade_portfolio_increase_weight() -> None:
     request = AdvisoryDecisionRequest.model_validate(load_sample("high_risk_request.json"))
     bundle = ToolResultBundle.model_validate(load_sample("high_risk_tool_results.json"))
-    outputs = run_specialist_analysis(request, bundle)
+    outputs = fixture_agent_outputs(request, bundle)
     synthesis = ManagerSynthesisOutput(
         summary="Increase exposure draft.",
         time_horizon=InvestmentHorizon.SHORT_TERM,

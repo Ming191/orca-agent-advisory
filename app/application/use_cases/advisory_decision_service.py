@@ -1,10 +1,6 @@
 from dataclasses import dataclass, field
 
 from app.application.decision.decision_helpers import DecisionValidationError
-from app.application.decision.manager_synthesis_builder import (
-    build_deterministic_manager_synthesis,
-    run_specialist_analysis,
-)
 from app.application.decision.portfolio_assembler import assemble_portfolio_decision
 from app.application.decision.single_symbol_assembler import assemble_single_symbol_decision
 from app.application.ports.crew_orchestrator import CrewOrchestratedOutputs, CrewOrchestrator
@@ -114,6 +110,4 @@ __all__ = [
     "AdvisoryDecisionService",
     "DecisionResult",
     "DecisionValidationError",
-    "build_deterministic_manager_synthesis",
-    "run_specialist_analysis",
 ]

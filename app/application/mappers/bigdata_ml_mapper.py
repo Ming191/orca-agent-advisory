@@ -10,18 +10,16 @@ def is_valid_context_row(row: Mapping[str, Any]) -> bool:
 
 def prediction_from_row(row: Mapping[str, Any]) -> MlPrediction:
     pred_a = _clamp(_float(row.get("pred_a")))
-    risk_prob = _clamp(_float(row.get("risk_prob")))
-    final_score = _float(row.get("final_score"))
-    if final_score >= 0.45 and risk_prob < 0.30:
+    if pred_a >= 0.55:
         direction = "UP"
-    elif risk_prob >= 0.70:
+    elif pred_a <= 0.45:
         direction = "DOWN"
     else:
         direction = "NEUTRAL"
     return MlPrediction(
         predicted_direction=direction,
         probability_up=pred_a,
-        probability_down=risk_prob,
+        probability_down=1.0 - pred_a,
         model_version=str(row.get("model_version") or "unknown"),
         feature_window=str(row.get("feature_version") or "unknown"),
     )

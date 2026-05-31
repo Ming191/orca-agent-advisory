@@ -25,6 +25,8 @@ class AgentSettings(BaseModel):
     advisory_output_dir: Path = Path("outputs/advisory_decisions")
     decision_job_database_url: str | None = None
     decision_job_table: str = "orca_decision_jobs"
+    redis_url: str | None = None
+    decision_job_queue: str = "orca-decision-jobs"
     crewai_verbose: bool = False
     crewai_tracing: bool = True
     crewai_share_crew: bool = False
@@ -137,6 +139,12 @@ def load_settings(env_file: str | Path | None = ".env") -> AgentSettings:
             _read_env("DECISION_JOB_TABLE", values)
             or _read_env("ORCA_DECISION_JOB_TABLE", values)
             or AgentSettings.model_fields["decision_job_table"].default
+        ),
+        redis_url=_read_env("REDIS_URL", values) or _read_env("ORCA_REDIS_URL", values),
+        decision_job_queue=(
+            _read_env("DECISION_JOB_QUEUE", values)
+            or _read_env("ORCA_DECISION_JOB_QUEUE", values)
+            or AgentSettings.model_fields["decision_job_queue"].default
         ),
         crewai_verbose=_read_bool_env(
             "CREWAI_VERBOSE",

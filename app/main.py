@@ -20,6 +20,7 @@ from app.infrastructure.storage.decision_job_store import (
     IdempotencyConflictError,
     PostgresDecisionJobStore,
 )
+from app.infrastructure.queue.decision_job_queue import DecisionJobQueue
 
 
 app = FastAPI(title="Orca Agent Advisory API", version="0.1.0")
@@ -29,6 +30,8 @@ _jobs: dict[str, dict[str, Any]] = {}
 _jobs_lock = Lock()
 _job_store: DecisionJobStore | None = None
 _job_store_lock = Lock()
+_job_queue: DecisionJobQueue | None = None
+_job_queue_lock = Lock()
 
 
 def get_decision_service() -> AdvisoryDecisionService:
@@ -53,6 +56,17 @@ def get_decision_job_store() -> DecisionJobStore | None:
         return _job_store
 
 
+def get_decision_job_queue() -> DecisionJobQueue | None:
+    global _job_queue
+    settings = load_settings()
+    if not settings.redis_url:
+        return None
+    with _job_queue_lock:
+        if _job_queue is None:
+            _job_queue = DecisionJobQueue(settings)
+        return _job_queue
+
+
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
     return {"status": "ok"}
@@ -64,6 +78,9 @@ def readyz() -> dict[str, str]:
     store = get_decision_job_store()
     if store is not None and hasattr(store, "ping"):
         store.ping()
+    queue = get_decision_job_queue()
+    if queue is not None:
+        queue.ping()
     return {"status": "ready"}
 
 
@@ -135,8 +152,6 @@ def create_advisory_decision_job(
     request: AdvisoryDecisionRequest,
     http_request: Request,
     background_tasks: BackgroundTasks,
-    decision_service: AdvisoryDecisionService = Depends(get_decision_service),
-    tool_result_provider: ToolResultProvider = Depends(get_tool_result_provider),
 ) -> dict[str, Any]:
     job_id = str(uuid4())
     now = _now_iso()
@@ -154,7 +169,17 @@ def create_advisory_decision_job(
         "started_at": None,
         "completed_at": None,
     }
+    settings = load_settings()
     store = get_decision_job_store()
+    queue = get_decision_job_queue()
+    if queue is not None and store is None:
+        return _error_response(
+            request_id=request.request_id,
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            error_code="JOB_STORE_REQUIRED",
+            message="ORCA_DECISION_JOB_DATABASE_URL is required when ORCA_REDIS_URL is configured",
+            recoverable=True,
+        )
     if store is not None:
         try:
             result = store.create_job(
@@ -179,7 +204,33 @@ def create_advisory_decision_job(
     else:
         with _jobs_lock:
             _jobs[job_id] = job
-    background_tasks.add_task(_run_decision_job, job_id, request, decision_service, tool_result_provider)
+    if queue is not None and store is not None:
+        try:
+            queue.enqueue_decision_job(
+                job_id,
+                request.model_dump(mode="json"),
+                timeout_seconds=settings.agent_timeout_seconds + 120,
+            )
+        except Exception as exc:  # noqa: BLE001 - queued job must not stay queued if enqueue fails.
+            _fail_job(
+                job_id,
+                request_id=request.request_id,
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                error_code="QUEUE_UNAVAILABLE",
+                message=str(exc) or "decision job queue unavailable",
+                recoverable=True,
+            )
+            return _error_response(
+                request_id=request.request_id,
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                error_code="QUEUE_UNAVAILABLE",
+                message="decision job queue unavailable",
+                recoverable=True,
+            )
+    else:
+        decision_service = get_decision_service()
+        tool_result_provider = get_tool_result_provider()
+        background_tasks.add_task(_run_decision_job, job_id, request, decision_service, tool_result_provider)
     return _job_public(job, include_links=True)
 
 

@@ -23,6 +23,8 @@ class AgentSettings(BaseModel):
     advisory_use_llm_critic_stage: bool = False
     advisory_llm_critic_timeout_seconds: int = Field(default=60, ge=1)
     advisory_output_dir: Path = Path("outputs/advisory_decisions")
+    decision_job_database_url: str | None = None
+    decision_job_table: str = "orca_decision_jobs"
     crewai_verbose: bool = False
     crewai_tracing: bool = True
     crewai_share_crew: bool = False
@@ -128,6 +130,13 @@ def load_settings(env_file: str | Path | None = ".env") -> AgentSettings:
         advisory_output_dir=Path(
             _read_env("ADVISORY_OUTPUT_DIR", values)
             or AgentSettings.model_fields["advisory_output_dir"].default
+        ),
+        decision_job_database_url=_read_env("DECISION_JOB_DATABASE_URL", values)
+        or _read_env("ORCA_DECISION_JOB_DATABASE_URL", values),
+        decision_job_table=(
+            _read_env("DECISION_JOB_TABLE", values)
+            or _read_env("ORCA_DECISION_JOB_TABLE", values)
+            or AgentSettings.model_fields["decision_job_table"].default
         ),
         crewai_verbose=_read_bool_env(
             "CREWAI_VERBOSE",

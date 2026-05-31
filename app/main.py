@@ -15,6 +15,11 @@ from app.config import load_settings
 from app.application.ports.tool_result_provider import ToolResultProvider
 from app.application.use_cases.advisory_decision_service import AdvisoryDecisionService, DecisionValidationError
 from app.bootstrap.container import build_decision_service, build_tool_result_provider
+from app.infrastructure.storage.decision_job_store import (
+    DecisionJobStore,
+    IdempotencyConflictError,
+    PostgresDecisionJobStore,
+)
 
 
 app = FastAPI(title="Orca Agent Advisory API", version="0.1.0")
@@ -22,6 +27,8 @@ app = FastAPI(title="Orca Agent Advisory API", version="0.1.0")
 # Dev/first-cut job store only. In-memory dict is not multi-worker safe.
 _jobs: dict[str, dict[str, Any]] = {}
 _jobs_lock = Lock()
+_job_store: DecisionJobStore | None = None
+_job_store_lock = Lock()
 
 
 def get_decision_service() -> AdvisoryDecisionService:
@@ -32,6 +39,20 @@ def get_tool_result_provider() -> ToolResultProvider:
     return build_tool_result_provider(load_settings())
 
 
+def get_decision_job_store() -> DecisionJobStore | None:
+    global _job_store
+    settings = load_settings()
+    if not settings.decision_job_database_url:
+        return None
+    with _job_store_lock:
+        if _job_store is None:
+            _job_store = PostgresDecisionJobStore(
+                settings.decision_job_database_url,
+                table_name=settings.decision_job_table,
+            )
+        return _job_store
+
+
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
     return {"status": "ok"}
@@ -40,6 +61,9 @@ def healthz() -> dict[str, str]:
 @app.get("/readyz")
 def readyz() -> dict[str, str]:
     load_settings()
+    store = get_decision_job_store()
+    if store is not None and hasattr(store, "ping"):
+        store.ping()
     return {"status": "ready"}
 
 
@@ -109,6 +133,7 @@ def create_advisory_decision(
 @app.post("/api/v1/advisory/decision-jobs", status_code=status.HTTP_202_ACCEPTED)
 def create_advisory_decision_job(
     request: AdvisoryDecisionRequest,
+    http_request: Request,
     background_tasks: BackgroundTasks,
     decision_service: AdvisoryDecisionService = Depends(get_decision_service),
     tool_result_provider: ToolResultProvider = Depends(get_tool_result_provider),
@@ -120,6 +145,7 @@ def create_advisory_decision_job(
         "request_id": request.request_id,
         "status": "queued",
         "progress": 0,
+        "progress_stage": "queued",
         "run_id": None,
         "error": None,
         "result": None,
@@ -128,8 +154,31 @@ def create_advisory_decision_job(
         "started_at": None,
         "completed_at": None,
     }
-    with _jobs_lock:
-        _jobs[job_id] = job
+    store = get_decision_job_store()
+    if store is not None:
+        try:
+            result = store.create_job(
+                job,
+                request_payload=request.model_dump(mode="json"),
+                idempotency_key=http_request.headers.get("Idempotency-Key"),
+                tenant_id=http_request.headers.get("X-Tenant-Id", "local"),
+                user_id=http_request.headers.get("X-User-Id"),
+                created_by=http_request.headers.get("X-User-Id"),
+            )
+        except IdempotencyConflictError as exc:
+            return _error_response(
+                request_id=request.request_id,
+                status_code=status.HTTP_409_CONFLICT,
+                error_code="IDEMPOTENCY_CONFLICT",
+                message=str(exc),
+                recoverable=False,
+            )
+        job = result.job
+        if not result.created:
+            return _job_public(job, include_links=True)
+    else:
+        with _jobs_lock:
+            _jobs[job_id] = job
     background_tasks.add_task(_run_decision_job, job_id, request, decision_service, tool_result_provider)
     return _job_public(job, include_links=True)
 
@@ -241,16 +290,17 @@ def _run_decision_job(
     decision_service: AdvisoryDecisionService,
     tool_result_provider: ToolResultProvider,
 ) -> None:
-    _update_job(job_id, status="running", progress=10, started_at=_now_iso())
+    _update_job(job_id, status="running", progress=10, progress_stage="running", started_at=_now_iso())
     try:
         tool_results = tool_result_provider.get_tool_results(request)
-        _update_job(job_id, progress=50)
+        _update_job(job_id, progress=50, progress_stage="decision_running")
         decision = decision_service.decide(request, tool_results)
         result = decision.model_dump(mode="json") if hasattr(decision, "model_dump") else decision
         _update_job(
             job_id,
             status="succeeded",
             progress=100,
+            progress_stage="completed",
             run_id=result.get("run_id") if isinstance(result, dict) else None,
             result=result,
             completed_at=_now_iso(),
@@ -316,6 +366,7 @@ def _fail_job(
         job_id,
         status="failed",
         progress=100,
+        progress_stage="failed",
         error={"status_code": status_code, "body": body},
         completed_at=_now_iso(),
     )
@@ -323,19 +374,39 @@ def _fail_job(
 
 def _update_job(job_id: str, **updates: Any) -> None:
     updates["updated_at"] = _now_iso()
+    store = get_decision_job_store()
+    if store is not None:
+        store.update_job(job_id, **updates)
+        return
     with _jobs_lock:
         if job_id in _jobs:
             _jobs[job_id].update(updates)
 
 
 def _get_job(job_id: str) -> dict[str, Any] | None:
+    store = get_decision_job_store()
+    if store is not None:
+        return store.get_job(job_id)
     with _jobs_lock:
         job = _jobs.get(job_id)
         return dict(job) if job else None
 
 
 def _job_public(job: dict[str, Any], *, include_links: bool = False) -> dict[str, Any]:
-    payload = {key: value for key, value in job.items() if key != "result"}
+    public_fields = {
+        "job_id",
+        "request_id",
+        "status",
+        "progress",
+        "progress_stage",
+        "run_id",
+        "error",
+        "created_at",
+        "updated_at",
+        "started_at",
+        "completed_at",
+    }
+    payload = {key: value for key, value in job.items() if key in public_fields}
     if include_links:
         payload["links"] = {
             "status": f"/api/v1/advisory/decision-jobs/{job['job_id']}",

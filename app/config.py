@@ -26,7 +26,7 @@ class AgentSettings(BaseModel):
     crewai_verbose: bool = False
     crewai_tracing: bool = True
     crewai_share_crew: bool = False
-    tool_result_provider: str = "sample"
+    tool_result_provider: str = "bigdata"
 
     @field_validator("deepseek_base_url", "deepseek_model")
     @classmethod
@@ -72,8 +72,8 @@ class AgentSettings(BaseModel):
     @classmethod
     def normalize_tool_result_provider(cls, value: str) -> str:
         cleaned = value.strip().lower()
-        if cleaned not in {"sample", "bigdata"}:
-            raise ValueError("tool_result_provider must be one of: sample, bigdata")
+        if cleaned != "bigdata":
+            raise ValueError("tool_result_provider must be: bigdata")
         return cleaned
 
 

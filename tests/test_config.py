@@ -15,11 +15,16 @@ def test_load_settings_uses_tool_result_provider_env(monkeypatch: pytest.MonkeyP
 
 def test_load_settings_uses_orca_tool_result_provider_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("TOOL_RESULT_PROVIDER", raising=False)
-    monkeypatch.setenv("ORCA_TOOL_RESULT_PROVIDER", " sample ")
+    monkeypatch.setenv("ORCA_TOOL_RESULT_PROVIDER", " bigdata ")
 
     settings = load_settings(env_file=None)
 
-    assert settings.tool_result_provider == "sample"
+    assert settings.tool_result_provider == "bigdata"
+
+
+def test_agent_settings_rejects_sample_tool_result_provider() -> None:
+    with pytest.raises(ValidationError):
+        AgentSettings(tool_result_provider="sample")
 
 
 def test_agent_settings_rejects_unknown_tool_result_provider() -> None:

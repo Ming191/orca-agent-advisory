@@ -5,14 +5,11 @@ from app.application.use_cases.advisory_decision_service import AdvisoryDecision
 from app.config import AgentSettings, load_settings
 from app.infrastructure.bigdata.bigdata_ml_provider import BigdataMlToolResultProvider
 from app.infrastructure.crewai.crew_runner import HierarchicalCrewRunner
-from app.infrastructure.providers.sample_tool_result_provider import SampleToolResultProvider
 from app.infrastructure.storage.output_store import DecisionOutputStore
 
 
 def build_tool_result_provider(settings: AgentSettings) -> ToolResultProvider:
-    if settings.tool_result_provider == "bigdata":
-        return BigdataMlToolResultProvider()
-    return SampleToolResultProvider()
+    return BigdataMlToolResultProvider()
 
 
 def build_crew_orchestrator(settings: AgentSettings) -> CrewOrchestrator:
